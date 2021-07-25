@@ -1,0 +1,6 @@
+defmodule BillinhoApiWeb.StudentController do
+  use BillinhoApiWeb, :controller
+
+  def index(conn, page: page, count: count) do
+    json(conn, %{message: "sucesso!"})
+  end
