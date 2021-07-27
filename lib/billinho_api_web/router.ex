@@ -17,7 +17,7 @@ defmodule BillinhoApiWeb.Router do
     pipe_through :api
 
     resources "/students", StudentController, only: [:index, :create]
-    #resources "/enrollments", EnrollmentController, only: [:index, :create]
+    resources "/enrollments", EnrollmentController, only: [:index, :create]
   end
 
   # Other scopes may use custom stacks.
