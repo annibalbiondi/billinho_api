@@ -3,10 +3,10 @@ defmodule BillinhoApi.Repo.Migrations.CreateStudents do
 
   def change do
     create table(:students) do
-      add :name, :string
-      add :cpf, :string
+      add :name, :string, null: false
+      add :cpf, :string, null: false
       add :birthdate, :date
-      add :payment_method, :string
+      add :payment_method, :string, null: false
 
       timestamps()
     end
