@@ -16,7 +16,7 @@ defmodule BillinhoApi.Enrollment do
   @doc false
   def changeset(enrollment, attrs) do
     enrollment
-    |> cast(attrs, [:amount, :installments, :due_day])
+    |> cast(attrs, [:amount, :installments, :due_day, :student_id])
     |> validate_required([:amount, :installments, :due_day, :student_id])
     |> validate_number(:amount, greater_than: 0)
     |> validate_number(:installments, greater_than: 1)
