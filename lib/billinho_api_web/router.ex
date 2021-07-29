@@ -1,6 +1,8 @@
 defmodule BillinhoApiWeb.Router do
   use BillinhoApiWeb, :router
 
+  import Plug.BasicAuth
+  
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
@@ -13,11 +15,21 @@ defmodule BillinhoApiWeb.Router do
     plug :accepts, ["json"]
   end
 
+  pipeline :auth do
+    plug :basic_auth, username: "admin_ops", password: "billing"
+  end
+
   scope "/", BillinhoApiWeb do
     pipe_through :api
 
     resources "/students", StudentController, only: [:index, :create]
-    resources "/enrollments", EnrollmentController, only: [:index, :create]
+    resources "/enrollments", EnrollmentController, only: [:index]
+  end
+
+  scope "/", BillinhoApiWeb do
+    pipe_through [:api, :auth]
+
+    resources "/enrollments", EnrollmentController, only: [:create]
   end
 
   # Other scopes may use custom stacks.
