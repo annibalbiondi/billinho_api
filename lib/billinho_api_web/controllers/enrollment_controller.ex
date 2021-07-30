@@ -2,6 +2,7 @@ defmodule BillinhoApiWeb.EnrollmentController do
   use BillinhoApiWeb, :controller
 
   alias BillinhoApi.{Enrollment, Bill, Repo}
+  alias BillinhoApiWeb.ErrorHelpers
   import Ecto.Query
   
   def index(conn, %{"page" => page_param,
@@ -11,39 +12,87 @@ defmodule BillinhoApiWeb.EnrollmentController do
     count = String.to_integer(count_param)
     
     enrollments =  Repo.all(from s in Enrollment,
-      limit: type(^count, :integer),
-      offset: type(^page, :integer),
-      preload: [:bills])
+                            limit: type(^count, :integer),
+                            offset: type(^page, :integer),
+                            preload: [:bills])
     json(conn,
       %{"page" => page + 1,
 	"items" => Enum.map(enrollments, &_enrollment_to_json/1)})
   end
 
   def create(conn, params) do
-    params_int = Enum.into(
-      Enum.map(params, fn {k, v} -> {k, String.to_integer(v)} end),
-      %{})
-    enrollment = Enrollment.changeset(%Enrollment{}, params_int)
-    if not enrollment.valid? do
+    {result, values} = _params_to_integer(params)
+    if result == :error do
       conn
-      |> send_resp(400, enrollment.errors)
+      |> send_resp(
+        400,
+      Jason.encode!(values))
     else
-      due_day = params_int["due_day"]
-      {{year, month, day}, _} = :calendar.local_time()
-      {:ok, possible_due_date} = Date.new(
-	year,
-	month,
-	Enum.min([
-	  due_day,
-	  :calendar.last_day_of_the_month(year, month)
-	]))
-      bills = _build_bills(Map.put_new(params_int, "due_date",
-	  (if (possible_due_date.day > day),
-	  do: possible_due_date,
-	      else: _next_due_date(possible_due_date, due_day))))
-      enrollment_with_bills = Ecto.Changeset.put_assoc(enrollment, :bills, bills)
-      result = Repo.insert!(enrollment_with_bills)
-      json(conn, _enrollment_to_json(result))
+      params_int = values
+      IO.puts Jason.encode!(params_int)
+      enrollment = Enrollment.changeset(%Enrollment{}, params_int)
+      if not enrollment.valid? do
+        conn
+        |> send_resp(
+          400,
+        Jason.encode!(Ecto.Changeset.traverse_errors(
+              enrollment, &ErrorHelpers.translate_error/1)))
+      else
+        due_day = params_int["due_day"]
+        {{year, month, day}, _} = :calendar.local_time()
+        {:ok, possible_due_date} = Date.new(
+	  year,
+	  month,
+	  Enum.min([
+	    due_day,
+	    :calendar.last_day_of_the_month(year, month)
+	  ]))
+        bills = _build_bills(Map.put_new(params_int, "due_date",
+	    (if (possible_due_date.day > day),
+	    do: possible_due_date,
+	        else: _next_due_date(possible_due_date, due_day))))
+        enrollment_with_bills = Ecto.Changeset.put_assoc(enrollment, :bills, bills)
+        {result, value} = Repo.insert(enrollment_with_bills)
+        if result == :ok do
+          json(conn, _enrollment_to_json(value))
+        else
+          conn
+          |> send_resp(
+            400,
+          Jason.encode!(Ecto.Changeset.traverse_errors(
+                value, &ErrorHelpers.translate_error/1)))
+        end
+      end
+    end
+  end
+  
+
+  def _params_to_integer(params) do
+    params_int = Enum.into(
+      Enum.map(params, fn {k, v} ->
+        integer_value = Integer.parse(v, 10)
+        case integer_value do
+          {int, decimal} when decimal == "" -> {k, int}
+          _ -> {k, :error}
+        end
+      end),
+      %{})
+    IO.puts Jason.encode!(params_int)
+    errors = Enum.into(Enum.reduce(
+          params_int,
+          %{},
+          fn x, acc ->
+            {name, value} = x
+            if value == :error do
+              Map.put_new(acc, name, ["must be an integer"])
+            else
+              acc
+            end
+          end), %{})
+    if map_size(errors) > 0 do
+      {:error, errors}
+    else
+      {:ok, params_int}
     end
   end
 
