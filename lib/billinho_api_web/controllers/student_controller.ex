@@ -1,20 +1,37 @@
 defmodule BillinhoApiWeb.StudentController do
   use BillinhoApiWeb, :controller
 
-  alias BillinhoApi.{Student, Repo}
+  alias BillinhoApi.{Student, Repo, Utils}
   alias BillinhoApiWeb.ErrorHelpers
   import Ecto.Query
   
-  def index(conn, %{"page" => page_param, "count" => count_param} = _params) do
-    # TODO: Definir valores padrão para os parâmetros?
-    page = String.to_integer(page_param) - 1
-    count = String.to_integer(count_param)
+  def index(conn, %{"page" => _, "count" => _} = params) do
+    {result, values} = Utils.params_to_integer(params)
 
-    students =  Repo.all(from s in Student,
-        limit: type(^count, :integer),
-        offset: type(^page, :integer))
-    items = Enum.map(students, &_to_json/1)
-    json(conn, %{"page" => page + 1, "items" => items})
+    if result == :error do
+      conn
+      |> send_resp(400, Jason.encode!(values))
+    else
+      errors = Enum.reduce(values, %{}, fn param, acc ->
+        case param do
+          {name, value} when value <= 0 ->
+            Map.put_new(acc, name, ["must be positive"])
+          _ ->
+            acc
+        end
+      end)
+      if map_size(errors) > 0 do
+        conn
+        |> send_resp(400, Jason.encode!(errors))
+      else
+        %{"page" => page, "count" => count} = values
+        students =  Repo.all(from s in Student,
+          limit: type(^count, :integer),
+          offset: type(^page - 1, :integer))
+        json(conn, %{"page" => page ,
+                     "items" => Enum.map(students, &_to_json/1)})
+      end
+    end
   end
 
   def create(conn, params) do
@@ -71,6 +88,8 @@ defmodule BillinhoApiWeb.StudentController do
     {result, birthdate} = unless is_nil(student["birthdate"]) do
       [dd, mm, yyyy] = String.split(student["birthdate"], "/")
       Date.from_iso8601("#{yyyy}-#{mm}-#{dd}")
+    else
+      {:ok, nil}
     end
     if result == :ok do
       Student.changeset(%Student{},

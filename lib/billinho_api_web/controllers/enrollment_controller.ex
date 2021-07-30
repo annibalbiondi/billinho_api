@@ -1,27 +1,43 @@
 defmodule BillinhoApiWeb.EnrollmentController do
   use BillinhoApiWeb, :controller
 
-  alias BillinhoApi.{Enrollment, Bill, Repo}
+  alias BillinhoApi.{Enrollment, Bill, Repo, Utils}
   alias BillinhoApiWeb.ErrorHelpers
   import Ecto.Query
   
-  def index(conn, %{"page" => page_param,
-		    "count" => count_param} = _params) do
-    # TODO: Definir valores padrão para os parâmetros?
-    page = String.to_integer(page_param) - 1
-    count = String.to_integer(count_param)
-    
-    enrollments =  Repo.all(from s in Enrollment,
-                            limit: type(^count, :integer),
-                            offset: type(^page, :integer),
-                            preload: [:bills])
-    json(conn,
-      %{"page" => page + 1,
-	"items" => Enum.map(enrollments, &_enrollment_to_json/1)})
+  def index(conn, %{"page" => _, "count" => _} = params) do
+    {result, values} = Utils.params_to_integer(params)
+
+    if result == :error do
+      conn
+      |> send_resp(400, Jason.encode!(values))
+    else
+      errors = Enum.reduce(values, %{}, fn param, acc ->
+        case param do
+          {name, value} when value <= 0 ->
+            Map.put_new(acc, name, ["must be positive"])
+          _ ->
+            acc
+        end
+      end)
+      if map_size(errors) > 0 do
+        conn
+        |> send_resp(400, Jason.encode!(errors))
+      else
+        %{"page" => page, "count" => count} = values
+        enrollments =  Repo.all(from s in Enrollment,
+          limit: type(^count, :integer),
+          offset: type(^page - 1, :integer),
+          preload: [:bills])
+        json(conn,
+          %{"page" => page,
+            "items" => Enum.map(enrollments, &_enrollment_to_json/1)})
+      end
+    end
   end
 
   def create(conn, params) do
-    {result, values} = _params_to_integer(params)
+    {result, values} = Utils.params_to_integer(params)
     if result == :error do
       conn
       |> send_resp(
@@ -41,16 +57,16 @@ defmodule BillinhoApiWeb.EnrollmentController do
         due_day = params_int["due_day"]
         {{year, month, day}, _} = :calendar.local_time()
         {:ok, possible_due_date} = Date.new(
-	  year,
-	  month,
-	  Enum.min([
-	    due_day,
-	    :calendar.last_day_of_the_month(year, month)
-	  ]))
+          year,
+          month,
+          Enum.min([
+            due_day,
+            :calendar.last_day_of_the_month(year, month)
+          ]))
         bills = _build_bills(Map.put_new(params_int, "due_date",
-	    (if (possible_due_date.day > day),
-	    do: possible_due_date,
-	        else: _next_due_date(possible_due_date, due_day))))
+            (if (possible_due_date.day > day),
+           do: possible_due_date,
+                else: _next_due_date(possible_due_date, due_day))))
         enrollment_with_bills = Ecto.Changeset.put_assoc(enrollment, :bills, bills)
         {result, value} = Repo.insert(enrollment_with_bills)
         if result == :ok do
@@ -65,55 +81,25 @@ defmodule BillinhoApiWeb.EnrollmentController do
       end
     end
   end
-  
-
-  def _params_to_integer(params) do
-    params_int = Enum.into(
-      Enum.map(params, fn {k, v} ->
-        integer_value = Integer.parse(v, 10)
-        case integer_value do
-          {int, decimal} when decimal == "" -> {k, int}
-          _ -> {k, :error}
-        end
-      end),
-      %{})
-    IO.puts Jason.encode!(params_int)
-    errors = Enum.into(Enum.reduce(
-          params_int,
-          %{},
-          fn x, acc ->
-            {name, value} = x
-            if value == :error do
-              Map.put_new(acc, name, ["must be an integer"])
-            else
-              acc
-            end
-          end), %{})
-    if map_size(errors) > 0 do
-      {:error, errors}
-    else
-      {:ok, params_int}
-    end
-  end
 
   def _build_bills(%{"amount" => amount,
-		     "installments" => installments,
-		     "due_day" => due_day,
-		     "due_date" => due_date
-		    } = _params) do
+                     "installments" => installments,
+                     "due_day" => due_day,
+                     "due_date" => due_date
+                    } = _params) do
     if (installments == 0) do
       []
     else
       bill_amount = div(amount, installments)
       [Ecto.Changeset.change(%Bill{}, due_date: due_date,
-	  amount: bill_amount)
+          amount: bill_amount)
        | _build_bills(
-	 %{
-	   "amount" => amount - bill_amount,
-	   "installments" => installments - 1,
-	   "due_day" => due_day,
-	   "due_date" => _next_due_date(due_date, due_day)
-	 })]
+         %{
+           "amount" => amount - bill_amount,
+           "installments" => installments - 1,
+           "due_day" => due_day,
+           "due_date" => _next_due_date(due_date, due_day)
+         })]
     end
   end
 
