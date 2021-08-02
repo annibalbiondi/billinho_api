@@ -27,7 +27,7 @@ defmodule BillinhoApiWeb.StudentController do
         %{"page" => page, "count" => count} = values
         students =  Repo.all(from s in Student,
           limit: type(^count, :integer),
-          offset: type(^page - 1, :integer))
+          offset: type((^page - 1) * ^count, :integer))
         json(conn, %{"page" => page ,
                      "items" => Enum.map(students, &_to_json/1)})
       end

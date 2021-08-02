@@ -27,7 +27,7 @@ defmodule BillinhoApiWeb.EnrollmentController do
         %{"page" => page, "count" => count} = values
         enrollments =  Repo.all(from s in Enrollment,
           limit: type(^count, :integer),
-          offset: type(^page - 1, :integer),
+          offset: type((^page - 1) * ^count, :integer),
           preload: [:bills])
         json(conn,
           %{"page" => page,
